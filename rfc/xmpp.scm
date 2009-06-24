@@ -143,7 +143,7 @@ mechanisms:  List of xml-element objects representing the various mechainsms
    (jid-domain-part :init-keyword :jid-domain-part)
    (hostname        :init-keyword :hostname)
    (port            :init-keyword :port)
-   (channel         :init-form (channel-essential-table))))
+   (channel         :init-form (channel-essential))))
 
 (define-method write-object ((conn <xmpp-connection>) out)
   (format out "<connection to ~A:~A> ~A"
@@ -154,16 +154,16 @@ mechanisms:  List of xml-element objects representing the various mechainsms
 ;;
 ;; Channel
 ;;
-;; hash-table. key=xpath, value=handler.
+;; hash-table. key=pred function, value=handler.
 
-(define (channel-essential-table)
+(define (channel-essential)
   (define (handle-stream conn sxml)
     (set! (ref conn 'stream-id) ((if-car-sxpath '(http://etherx.jabber.org/streams:stream @ id *text*)) sxml)))
   (define (handle-features conn sxml)
     (set! (ref conn 'features)   ((sxpath '(http://etherx.jabber.org/streams:features *)) sxml)))
 
-  `((((http://etherx.jabber.org/streams:stream))   . ,handle-stream)
-    (((http://etherx.jabber.org/streams:features)) . ,handle-features)))
+  `((,(if-sxpath '(http://etherx.jabber.org/streams:stream))   . ,handle-stream)
+    (,(if-sxpath '(http://etherx.jabber.org/streams:features)) . ,handle-features)))
 
 (define (xmpp-connect hostname . args)
   (let-keywords args ((port             *default-port*)
@@ -221,9 +221,9 @@ mechanisms:  List of xml-element objects representing the various mechainsms
   (flush (ref conn 'socket-oport))
   (let1 stanza (read-stanza conn)
     (for-each (lambda (x)
-                (let ((xpath   (car x))
+                (let ((pred   (car x))
                       (handler (cdr x)))
-                  (when ((if-sxpath xpath) stanza)
+                  (when (pred stanza)
                     (handler conn stanza))))
               (ref conn 'channel))
     stanza))
