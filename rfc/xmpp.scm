@@ -137,16 +137,16 @@ mechanisms:  List of xml-element objects representing the various mechainsms
 |#
 
 (define-class <xmpp-connection> ()
-  ((socket          :init-keyword :socket          :accessor socket-of)
-   (socket-iport    :init-keyword :socket-iport    :accessor socket-iport-of)
-   (socket-oport    :init-keyword :socket-oport    :accessor socket-oport-of)
-   (stream-id                                      :accessor stream-id-of)
-   (stream-default-namespace                       :accessor stream-default-namespace-of)
-   (features                                       :accessor features-of)
-   (jid-domain-part :init-keyword :jid-domain-part :accessor jid-domain-part-of)
-   (hostname        :init-keyword :hostname        :accessor hostname-of)
-   (port            :init-keyword :port            :accessor port-of)
-   (channel         :init-form (channel-essential) :accessor channel-of)))
+  ((socket          :init-keyword :socket)
+   (socket-iport    :init-keyword :socket-iport)
+   (socket-oport    :init-keyword :socket-oport)
+   (stream-id)
+   (stream-default-namespace)
+   (features)
+   (jid-domain-part :init-keyword :jid-domain-part)
+   (hostname        :init-keyword :hostname)
+   (port            :init-keyword :port)
+   (channel         :init-form (channel-essential))))
 
 (define-method write-object ((conn <xmpp-connection>) out)
   (format out "<connection to ~A:~A> ~A"
