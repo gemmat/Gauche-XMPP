@@ -48,6 +48,7 @@
   (export <xmpp-connection>
           xmpp-connect
           xmpp-disconnect
+          call-with-xmpp-connection
           xmpp-receive-stanza
           xmpp-iq
           xmpp-iq-query
@@ -81,6 +82,8 @@
 (select-module rfc.xmpp)
 
 (define *default-port* 5222)
+
+(define-condition-type <xmpp-error> <error> #f)
 
 (define (RES-NAME->SXML res-name)
   (string->symbol
@@ -134,16 +137,16 @@ mechanisms:  List of xml-element objects representing the various mechainsms
 |#
 
 (define-class <xmpp-connection> ()
-  ((socket          :init-keyword :socket)
-   (socket-iport    :init-keyword :socket-iport)
-   (socket-oport    :init-keyword :socket-oport)
-   (stream-id)
-   (stream-default-namespace)
-   (features)
-   (jid-domain-part :init-keyword :jid-domain-part)
-   (hostname        :init-keyword :hostname)
-   (port            :init-keyword :port)
-   (channel         :init-form (channel-essential))))
+  ((socket          :init-keyword :socket          :accessor socket-of)
+   (socket-iport    :init-keyword :socket-iport    :accessor socket-iport-of)
+   (socket-oport    :init-keyword :socket-oport    :accessor socket-oport-of)
+   (stream-id                                      :accessor stream-id-of)
+   (stream-default-namespace                       :accessor stream-default-namespace-of)
+   (features                                       :accessor features-of)
+   (jid-domain-part :init-keyword :jid-domain-part :accessor jid-domain-part-of)
+   (hostname        :init-keyword :hostname        :accessor hostname-of)
+   (port            :init-keyword :port            :accessor port-of)
+   (channel         :init-form (channel-essential) :accessor channel-of)))
 
 (define-method write-object ((conn <xmpp-connection>) out)
   (format out "<connection to ~A:~A> ~A"
@@ -183,40 +186,44 @@ mechanisms:  List of xml-element objects representing the various mechainsms
 
 (define-method xmpp-disconnect ((conn <xmpp-connection>))
   (end-xml-stream conn)
-  (let ((s (ref conn 'socket)))
+  (let1 s (ref conn 'socket)
     (socket-close s)
     (socket-shutdown s SHUT_RDWR)))
 
+(define (call-with-xmpp-connection hostname proc . args)
+  (let1 conn (apply xmpp-connect (cons hostname args))
+    (unwind-protect (proc conn)
+      (xmpp-disconnect conn))))
+
 (define-method xmpp-receive-stanza ((conn <xmpp-connection>))
   (define (read-stanza conn)
-    (guard (e (else (format (current-error-port) "Error: ~a\n" (condition-ref e 'message))
-                    (xmpp-disconnect conn)))
-      (let ((inp (ref conn 'socket-iport)))
-        (call/cc
-         (lambda (return)
-           (while #t
-             (when (char-ready? inp)
-               (receive (_ token) (ssax:read-char-data inp #t (lambda _ #t) #t)
-                 (cond
-                  ((eof-object? token)
-                   (error "The connection closed by peer."))
-                  ((equal? token '(START . (stream . stream))) ;; <stream:stream> XMPP stream start.
-                   (receive
-                       (elem-gi attributes namespaces elem-content-model)
-                       (ssax:complete-start-tag '(stream . stream) inp #f '() '())
-                     (set! (ref conn 'stream-default-namespace) namespaces)
-                     (return (cons '*TOP* (FINISH-ELEMENT elem-gi attributes namespaces '() '())))))
-                  ((equal? token '(END . (stream . stream)))   ;;</stream:stream> XMPP stream end.
-                   (return '(end-tag-of-stream)))
-                  ((eq? 'PI (xml-token-kind token))
-                   ;; if you need to process the xml PI, try a following line.
-                   ;;`(*PI* ,(xml-token-head token) ,(ssax:read-pi-body-as-string inp)))
-                   (ssax:skip-pi inp))
-                  ((eq? 'START (xml-token-kind token))
-                   (return (cons '*TOP* (elem-parser (xml-token-head token) inp #f '()
-                                                     (ref conn 'stream-default-namespace) #f '()))))
-                  (else
-                   (errorf "Oops. What's happened? ~a" (read-char inp))))))))))))
+    (let ((inp (ref conn 'socket-iport)))
+      (call/cc
+       (lambda (return)
+         (while #t
+           (when (char-ready? inp)
+             (receive (_ token) (ssax:read-char-data inp #t (lambda _ #t) #t)
+               (cond
+                ((eof-object? token)
+                 (error <xmpp-error> "The connection closed by peer."))
+                ((equal? token '(START . (stream . stream))) ;; <stream:stream> XMPP stream start.
+                 (receive
+                     (elem-gi attributes namespaces elem-content-model)
+                     (ssax:complete-start-tag '(stream . stream) inp #f '() '())
+                   (set! (ref conn 'stream-default-namespace) namespaces)
+                   (return (cons '*TOP* (FINISH-ELEMENT elem-gi attributes namespaces '() '())))))
+                ((equal? token '(END . (stream . stream)))   ;;</stream:stream> XMPP stream end.
+                 (return '(end-tag-of-stream)))
+                ((eq? 'PI (xml-token-kind token))
+                 ;; if you need to process the xml PI, try a following line.
+                 ;;`(*PI* ,(xml-token-head token) ,(ssax:read-pi-body-as-string inp)))
+                 (ssax:skip-pi inp))
+                ((eq? 'START (xml-token-kind token))
+                 (return (cons '*TOP* (elem-parser (xml-token-head token) inp #f '()
+                                                   (ref conn 'stream-default-namespace) #f '()))))
+                (else
+                 ;;something wrong
+                 (error <xmpp-error> "Oops. Something wrong at XMPP parsing:" (read-char inp)))))))))))
     
   (flush (ref conn 'socket-oport))
   (let1 stanza (read-stanza conn)
@@ -308,7 +315,7 @@ mechanisms:  List of xml-element objects representing the various mechainsms
     (let ((xmlns (case type
                    ((:info)  "http://jabber.org/protocol/disco#info")
                    ((:items) "http://jabber.org/protocol/disco#items")
-                   (else (error "Unknown type: ~a (Please choose between :info and :items)" type)))))
+                   (else (errorf <xmpp-error> "Unknown type: ~a (Please choose between :info and :items)" type)))))
       (xmpp-iq-query (conn :id "info1" :xmlns xmlns :to to :node node)))))
 
 ;;
