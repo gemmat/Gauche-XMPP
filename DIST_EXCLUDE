@@ -6,3 +6,5 @@ TEST
 autom4te.cache
 digest-md5-crash.html
 .svn
+.git
+.gitignore
