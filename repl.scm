@@ -37,5 +37,7 @@
       (while #t
         (receive (from expr) (my-reader c)
           (let1 my-printer (my-printer-factory c from)
-            (my-printer (eval expr (interaction-environment)))))))))
+            (my-printer (guard (e
+                                (else (condition-ref e 'message)))
+                               (eval expr (interaction-environment))))))))))
           
