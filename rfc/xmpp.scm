@@ -180,9 +180,15 @@ mechanisms:  List of xml-element objects representing the various mechainsms
                    :port            port
                    :jid-domain-part jid-domain-part)))
       (begin-xml-stream conn)
-      (xmpp-receive-stanza conn) ; stream
-      (xmpp-receive-stanza conn) ; features
-      conn)))
+      (guard (exc
+               ((<lesser-version> exc)
+                ;; If you're enough brave to support ancient Jabber Protocol,
+                ;; continue the session like bellow.
+                ;; (set! (ref conn 'features) '()) conn))
+                (error "Server is not support XMPP. ")))
+        (xmpp-receive-stanza conn) ; stream
+        (xmpp-receive-stanza conn) ; features
+        conn))))
 
 (define-method xmpp-disconnect ((conn <xmpp-connection>))
   (end-xml-stream conn)
@@ -194,6 +200,8 @@ mechanisms:  List of xml-element objects representing the various mechainsms
   (let1 conn (apply xmpp-connect (cons hostname args))
     (unwind-protect (proc conn)
       (xmpp-disconnect conn))))
+
+(define-condition-type <lesser-version> <condition> #f (stanza))
 
 (define-method xmpp-receive-stanza ((conn <xmpp-connection>))
   (define (read-stanza conn)
@@ -211,7 +219,11 @@ mechanisms:  List of xml-element objects representing the various mechainsms
                      (elem-gi attributes namespaces elem-content-model)
                      (ssax:complete-start-tag '(stream . stream) inp #f '() '())
                    (set! (ref conn 'stream-default-namespace) namespaces)
-                   (return (cons '*TOP* (FINISH-ELEMENT elem-gi attributes namespaces '() '())))))
+                   (let1 stanza (cons '*TOP* (FINISH-ELEMENT elem-gi attributes namespaces '() '()))
+                     (or (and-let* ((version (assoc 'version attributes))
+                                   ( (>= (string->number (cdr version)) 1.0) ))
+                           (return stanza))
+                         (raise (condition (<lesser-version> (stanza stanza))))))))
                 ((equal? token '(END . (stream . stream)))   ;;</stream:stream> XMPP stream end.
                  (return '(end-tag-of-stream)))
                 ((eq? 'PI (xml-token-kind token))
