@@ -35,6 +35,7 @@
 (define-module rfc.xmpp
   (use srfi-1)
   (use srfi-13)
+  (use srfi-14)
   (use util.list)
   (use gauche.net)
   (use gauche.uvector)
@@ -43,7 +44,7 @@
   (use sxml.tools)
   (use sxml.serializer)
   (use rfc.md5)
-  (use rfc.base64)  
+  (use rfc.base64)
   (use math.mt-random)
   (export <xmpp-connection>
           xmpp-connect
@@ -82,67 +83,27 @@
 (select-module rfc.xmpp)
 
 (define *default-port* 5222)
+(define *mt* (make <mersenne-twister> :seed (sys-time)))
+(define-constant alnum-vector (list->vector (char-set->list (char-set-union char-set:lower-case char-set:digit))))
+
+(define (random-string mt len)
+  (let1 alnum-vector-length (vector-length alnum-vector)
+    (list->string
+     (map (lambda (x)
+            (vector-ref alnum-vector (mt-random-integer mt alnum-vector-length)))
+          (iota len)))))
 
 (define-condition-type <xmpp-error> <error> #f)
-
-(define (RES-NAME->SXML res-name)
-  (string->symbol
-   (string-append
-    (symbol->string (car res-name))
-    ":"
-    (symbol->string (cdr res-name)))))
-
-(define (FINISH-ELEMENT elem-gi attributes namespaces parent-seed seed)
-  (let ((seed (ssax:reverse-collect-str-drop-ws seed))
-        (attrs (attlist-fold (lambda (attr accum)
-                               (cons (list
-                                      (if (symbol? (car attr)) (car attr)
-                                          (RES-NAME->SXML (car attr)))
-                                      (cdr attr)) accum))
-                             '()
-                             attributes)))
-    (cons
-     (cons
-      (if (symbol? elem-gi) elem-gi
-          (RES-NAME->SXML elem-gi))
-      (if (null? attrs) seed
-          (cons (cons '@ attrs) seed)))
-     parent-seed)))
-
-(define elem-parser (ssax:make-elem-parser
-                     (lambda (elem-gi attributes namespaces expected-content seed)
-                       '())
-                     FINISH-ELEMENT
-                     (lambda (string1 string2 seed)
-                       (if (string=? "" string2)
-                         (cons string1 seed)
-                         (cons* string2 string1 seed)))
-                     ()))
-
-#|
-"A TCP connection between this XMPP client and
-an, assumed, XMPP compliant server.  The connection does not
-know whether or not the XML stream has been initiated nor whether
-there may be any reply waiting to be read from the stream.  These
-details are left to the programmer."
-|#
-
-#|
-stream-id:   Stream ID attribute of the <stream> element as
-             gotten when we call BEGIN-XML-STREAM.
-features:    List of xml-element objects representing the various features
-             the host at the other end of the connection supports.
-mechanisms:  List of xml-element objects representing the various mechainsms
-             the host at the other end of the connection will accept.
-|#
 
 (define-class <xmpp-connection> ()
   ((socket          :init-keyword :socket)
    (socket-iport    :init-keyword :socket-iport)
    (socket-oport    :init-keyword :socket-oport)
-   (stream-id)
-   (stream-default-namespace)
+   (id)
+   (version)
+   (xml:lang)
    (features)
+   (stream-default-namespace)
    (jid-domain-part :init-keyword :jid-domain-part)
    (hostname        :init-keyword :hostname)
    (port            :init-keyword :port)
@@ -154,16 +115,20 @@ mechanisms:  List of xml-element objects representing the various mechainsms
           (ref conn 'port)
           (socket-status (ref conn 'socket))))
 
-;;
-;; Channel
-;;
-;; hash-table. key=pred function, value=handler.
+;; Channel is a hash-table.
+;; Its key is a predicate function for a stanza and
+;; the value is a handler for the stanza the predicate is true.
 
 (define (channel-essential)
   (define (handle-stream conn sxml)
-    (set! (ref conn 'stream-id) ((if-car-sxpath '(http://etherx.jabber.org/streams:stream @ id *text*)) sxml)))
+    (set! (ref conn 'id) ((if-car-sxpath '(http://etherx.jabber.org/streams:stream @ id *text*)) sxml))
+    (set! (ref conn 'xml:lang)  ((if-car-sxpath '(http://etherx.jabber.org/streams:stream @ xml:lang *text*)) sxml))
+    (and-let* ((version ((if-car-sxpath '(http://etherx.jabber.org/streams:stream @ version *text*)) sxml)))
+      (if (>= (string->number version) 1.0)
+        (set! (ref conn 'version) version)
+        (error <xmpp-error> "The server using a too old version of XMPP stream. version:" version))))
   (define (handle-features conn sxml)
-    (set! (ref conn 'features)   ((sxpath '(http://etherx.jabber.org/streams:features *)) sxml)))
+    (set! (ref conn 'features)  ((sxpath '(http://etherx.jabber.org/streams:features *)) sxml)))
 
   `((,(if-sxpath '(http://etherx.jabber.org/streams:stream))   . ,handle-stream)
     (,(if-sxpath '(http://etherx.jabber.org/streams:features)) . ,handle-features)))
@@ -180,15 +145,9 @@ mechanisms:  List of xml-element objects representing the various mechainsms
                    :port            port
                    :jid-domain-part jid-domain-part)))
       (begin-xml-stream conn)
-      (guard (exc
-               ((<lesser-version> exc)
-                ;; If you're enough brave to support ancient Jabber Protocol,
-                ;; continue the session like bellow.
-                ;; (set! (ref conn 'features) '()) conn))
-                (error "Server is not support XMPP. ")))
-        (xmpp-receive-stanza conn) ; stream
-        (xmpp-receive-stanza conn) ; features
-        conn))))
+      (xmpp-receive-stanza conn) ; stream
+      (xmpp-receive-stanza conn) ; features
+      conn)))
 
 (define-method xmpp-disconnect ((conn <xmpp-connection>))
   (end-xml-stream conn)
@@ -201,47 +160,72 @@ mechanisms:  List of xml-element objects representing the various mechainsms
     (unwind-protect (proc conn)
       (xmpp-disconnect conn))))
 
-(define-condition-type <lesser-version> <condition> #f (stanza))
-
 (define-method xmpp-receive-stanza ((conn <xmpp-connection>))
-  (define (read-stanza conn)
-    (let ((inp (ref conn 'socket-iport)))
-      (call/cc
-       (lambda (return)
-         (while #t
-           (when (char-ready? inp)
-             (receive (_ token) (ssax:read-char-data inp #t (lambda _ #t) #t)
-               (cond
-                ((eof-object? token)
-                 (error <xmpp-error> "The connection closed by peer."))
-                ((equal? token '(START . (stream . stream))) ;; <stream:stream> XMPP stream start.
-                 (receive
-                     (elem-gi attributes namespaces elem-content-model)
-                     (ssax:complete-start-tag '(stream . stream) inp #f '() '())
-                   (set! (ref conn 'stream-default-namespace) namespaces)
-                   (let1 stanza (cons '*TOP* (FINISH-ELEMENT elem-gi attributes namespaces '() '()))
-                     (or (and-let* ((version (assoc 'version attributes))
-                                   ( (>= (string->number (cdr version)) 1.0) ))
-                           (return stanza))
-                         (raise (condition (<lesser-version> (stanza stanza))))))))
-                ((equal? token '(END . (stream . stream)))   ;;</stream:stream> XMPP stream end.
-                 (return '(end-tag-of-stream)))
-                ((eq? 'PI (xml-token-kind token))
-                 ;; if you need to process the xml PI, try a following line.
-                 ;;`(*PI* ,(xml-token-head token) ,(ssax:read-pi-body-as-string inp)))
-                 (ssax:skip-pi inp))
-                ((eq? 'START (xml-token-kind token))
-                 (return (cons '*TOP* (elem-parser (xml-token-head token) inp #f '()
-                                                   (ref conn 'stream-default-namespace) #f '()))))
-                (else
-                 ;;something wrong
-                 (error <xmpp-error> "Oops. Something wrong at XMPP parsing:" (read-char inp)))))))))))
-    
+  (define (FINISH-ELEMENT elem-gi attributes namespaces parent-seed seed)
+    (define (RES-NAME->SXML res-name)
+      (string->symbol
+       (string-append
+        (symbol->string (car res-name))
+        ":"
+        (symbol->string (cdr res-name)))))
+    (let ((seed (ssax:reverse-collect-str-drop-ws seed))
+          (attrs (attlist-fold (lambda (attr accum)
+                                 (cons (list
+                                        (if (symbol? (car attr)) (car attr)
+                                            (RES-NAME->SXML (car attr)))
+                                        (cdr attr)) accum))
+                               '()
+                               attributes)))
+      (cons
+       (cons
+        (if (symbol? elem-gi) elem-gi
+            (RES-NAME->SXML elem-gi))
+        (if (null? attrs) seed
+            (cons (cons '@ attrs) seed)))
+       parent-seed)))
+  (define elem-parser (ssax:make-elem-parser
+                       (lambda (elem-gi attributes namespaces expected-content seed)
+                         '())
+                       FINISH-ELEMENT
+                       (lambda (string1 string2 seed)
+                         (if (string=? "" string2)
+                           (cons string1 seed)
+                           (cons* string2 string1 seed)))
+                       ()))
+  (define (read-stanza inp)
+    (call/cc
+     (lambda (return)
+       (while #t
+         (when (char-ready? inp)
+           (receive (_ token) (ssax:read-char-data inp #t (lambda _ #t) #t)
+             (cond
+              ((eof-object? token)
+               (error <xmpp-error> "The connection closed by peer."))
+              ((equal? token '(START . (stream . stream)))
+               ;; <stream:stream> XMPP stream start.
+               (receive
+                   (elem-gi attributes namespaces elem-content-model)
+                   (ssax:complete-start-tag '(stream . stream) inp #f '() '())
+                 (set! (ref conn 'stream-default-namespace) namespaces)
+                 (return (cons '*TOP* (FINISH-ELEMENT elem-gi attributes namespaces '() '())))))
+              ((equal? token '(END . (stream . stream)))
+               ;;</stream:stream> XMPP stream end.
+               (return '(end-tag-of-stream)))
+              ((eq? 'PI (xml-token-kind token))
+               ;; if you need to process the xml PI, try a following line.
+               ;;`(*PI* ,(xml-token-head token) ,(ssax:read-pi-body-as-string inp)))
+               (ssax:skip-pi inp))
+              ((eq? 'START (xml-token-kind token))
+               (return (cons '*TOP* (elem-parser (xml-token-head token) inp #f '()
+                                                 (ref conn 'stream-default-namespace) #f '()))))
+              (else
+               ;;something wrong
+               (error <xmpp-error> "Oops. Something wrong at XMPP parsing:" (read-char inp))))))))))
+
   (flush (ref conn 'socket-oport))
-  (let1 stanza (read-stanza conn)
+  (let1 stanza (read-stanza (ref conn 'socket-iport))
     (for-each (lambda (x)
-                (let ((pred   (car x))
-                      (handler (cdr x)))
+                (receive (pred handler) (car+cdr x)
                   (when (pred stanza)
                     (handler conn stanza))))
               (ref conn 'channel))
@@ -258,6 +242,11 @@ mechanisms:  List of xml-element objects representing the various mechainsms
 
 (define (print-sxml sxml)
   (srl:sxml->xml sxml (current-output-port)))
+
+(define (filter-map-extra . args)
+  (filter-map (lambda (x)
+                (and (not (null? x) x)))
+              args))
 
 ;;
 ;; Operators for communicating over the XML stream
@@ -282,60 +271,107 @@ mechanisms:  List of xml-element objects representing the various mechainsms
   (with-output-to-connection conn
     (print "</stream:stream>")))
 
+(define-syntax xmpp-presence
+  (syntax-rules ()
+    ((_ (conn args ...))
+     (xmpp-presence (conn args ...) #f))
+    ((_ (conn args ...) extra ...)
+     (let-keywords (list args ...) ((from     #f)
+                                    (id       #f)
+                                    (to       #f)
+                                    (type     #f)
+                                    (xml:lang #f))
+       (with-output-to-connection conn
+         (print-sxml `(presence (|@| ,@(cond-list
+                                        (from     `(from     ,from))
+                                        (id       `(id       ,id))
+                                        (to       `(to       ,to))
+                                        (type     `(type     ,type))
+                                        (xml:lang `(xml:lang ,xml:lang))))
+                                ,@(filter-map-extra extra ...))))))))
+
+(define-syntax xmpp-message
+  (syntax-rules ()
+    ((_ (conn args ...))
+     (xmpp-message (conn args ...) #f)
+    ((_ (conn args ...) extra ...)
+     (let-keywords (list args ...) ((from     #f)
+                                    (id       #f)
+                                    (to       #f)
+                                    (type     "normal")
+                                    (xml:lang #f))
+       (with-output-to-connection conn
+         (print-sxml `(message (|@| ,@(cond-list
+                                       (from     `(from     ,from))
+                                       (id       `(id       ,id))
+                                       (to       `(to       ,to))
+                                       (type     `(type     ,type))
+                                       (xml:lang `(xml:lang ,xml:lang))))
+                                ,@(filter-map-extra extra ...)))))))))
+
 ;;"Macro to make it easier to write IQ stanzas."
 (define-syntax xmpp-iq
   (syntax-rules ()
     ((_ (conn args ...))
-     (xmpp-iq (conn args ...) '()))
-    ((_ (conn args ...) body)
-     (let-keywords (list args ...) ((id #f)
-                                    (to #f)
-                                    (type "get"))
+     (xmpp-iq (conn args ...) #f))
+    ((_ (conn args ...) extra ...)
+     (let-keywords (list args ...) ((from     #f)
+                                    (id       #f)
+                                    (to       #f)
+                                    (type     "get")
+                                    (xml:lang #f))
        (with-output-to-connection conn
          (print-sxml `(iq (|@| ,@(cond-list
-                                  (id `(id ,id))
-                                  (to `(to ,to))
-                                  (#t `(type ,type))))
-                          ,body)))))))
+                                  (from     `(from     ,from))
+                                  (id       `(id       ,id))
+                                  (to       `(to       ,to))
+                                  (#t       `(type     ,type))
+                                  (xml:lang `(xml:lang ,xml:lang))))
+                          ,@(filter-map-extra boxy ...))))))))
 
 ;;"Macro to make it easier to write QUERYs."
 (define-syntax xmpp-iq-query
   (syntax-rules ()
     ((_ (conn args ...))
-     (xmpp-iq-query (conn args ...) '()))
-    ((_ (conn args ...) body)
-     (let-keywords (list args ...) ((xmlns #f)
-                                    (id    #f)
-                                    (to    #f)
-                                    (node  #f)
-                                    (type  "get"))
-       (xmpp-iq (conn :id id :type type :to to)
+     (xmpp-iq-query (conn args ...) #f))
+    ((_ (conn args ...) extra ...)
+     (let-keywords (list args ...) ((from     #f)
+                                    (id       #f)
+                                    (to       #f)
+                                    (type     "get")
+                                    (xml:lang #f)
+                                    (xmlns    #f)
+                                    (node     #f))
+       (xmpp-iq (conn :from from :id id  :to to :type type :xml:lang xml:lang)
                 `(query (|@| ,@(cond-list
                                 (xmlns `(xmlns ,xmlns))
                                 (node  `(node ,node))))
-                        ,@body))))))
-
+                        ,@(filter-map-extra extra)))))))
 
 ;;
-;; Discovery
+;; XEP-0030: Service Discovery
 ;;
 
 (define-method xmpp-discover ((conn <xmpp-connection>) . args)
-  (let-keywords args ((type :info)
-                      (to #f)
-                      (node #f))
-    (let ((xmlns (case type
+  (let-keywords args ((from     #f)
+                      (id       #f)
+                      (to       #f)
+                      (type     "get")
+                      (xml:lang #f)
+                      (xmlns    :info)
+                      (node     #f))
+    (let ((xmlns (case xmlns
                    ((:info)  "http://jabber.org/protocol/disco#info")
                    ((:items) "http://jabber.org/protocol/disco#items")
-                   (else (errorf <xmpp-error> "Unknown type: ~a (Please choose between :info and :items)" type)))))
-      (xmpp-iq-query (conn :id "info1" :xmlns xmlns :to to :node node)))))
+                   (else (errorf <xmpp-error> "Unknown xmlns: ~a (Please choose between :info and :items)" xmlns)))))
+      (xmpp-iq-query (conn :id id :from from :id id :to to :type type :xmlns xmlns :node node)))))
 
 ;;
 ;; Basic operations
 ;;
 
 (define-method xmpp-registration-requirements ((conn <xmpp-connection>))
-  (xmpp-iq-query (conn :id "reg1" :xmlns "jabber:iq:register")))
+  (xmpp-iq-query (conn :id "reg1" :type "get" :xmlns "jabber:iq:register")))
 
 (define-method xmpp-register ((conn <xmpp-connection>) username password name email)
   (xmpp-iq-query (conn :id "reg2" :type "set" :xmlns "jabber:iq:register")
@@ -359,7 +395,7 @@ mechanisms:  List of xml-element objects representing the various mechainsms
                             (mechanism ,mechanism))))))
 
 (define-method xmpp-auth-requirements ((conn <xmpp-connection>) username)
-  (xmpp-iq-query (conn :id "auth1" :xmlns "jabber:iq:auth")
+  (xmpp-iq-query (conn :id "auth1" :type "get" :xmlns "jabber:iq:auth")
                  `((username ,username))))
 
 (define-method xmpp-bind ((conn <xmpp-connection>) resource)
@@ -371,58 +407,28 @@ mechanisms:  List of xml-element objects representing the various mechainsms
   (xmpp-iq (conn :id "session_1" :type "set")
            `(session
              (|@| (xmlns "urn:ietf:params:xml:ns:xmpp-session")))))
-
-(define-method xmpp-presence ((conn <xmpp-connection>) . args)
-  (let-keywords args ((type #f)
-                      (to #f)
-                      (status #f)
-                      (show #f)
-                      (priority #f))
-    (with-output-to-connection conn
-      (print-sxml `(presence (|@| ,@(cond-list
-                                     (type     `(type     ,type))
-                                     (to       `(to       ,to))
-                                     (status   `(status   ,status))
-                                     (show     `(show     ,show))
-                                     (priority `(priority ,(format #f "~A" priority))))))))))
-
-(define-syntax xmpp-message
-  (syntax-rules ()
-    ((_ (conn args ...))
-     (xmpp-message (conn args ...) ""))
-    ((_ (conn args ...) str extra ...)
-     (let-keywords (list args ...) ((id #f)
-                                    (to #f)
-                                    (type "chat")
-                                    (lang #f))
-       (with-output-to-connection conn       
-         (print-sxml `(message (|@| ,@(cond-list
-                                       (id   `(id ,id))
-                                       (to   `(to ,to))
-                                       (type `(type ,(string-downcase type)))
-                                       (lang `(xml:lang ,lang))))
-                               (body ,str)
-                               ,extra ...)))))))
-
 ;;
-;; Subscription
+;; Managing Subscriptions
 ;;
 
 (define-method xmpp-request-subscription ((conn <xmpp-connection>) to)
-  (xmpp-presence conn :type "subscribe"    :to to))
+  (xmpp-presence (conn :type "subscribe"    :to to)))
 
 (define-method xmpp-approve-subscription ((conn <xmpp-connection>) to)
-  (xmpp-presence conn :type "subscribed"   :to to))
+  (xmpp-presence (conn :type "subscribed"   :to to)))
 
 (define-method xmpp-unsubscribe          ((conn <xmpp-connection>) to)
-  (xmpp-presence conn :type "unsubscribe"  :to to))
+  (xmpp-presence (conn :type "unsubscribe"  :to to)))
 
 (define-method xmpp-cancel-subscription  ((conn <xmpp-connection>) to)
-  (xmpp-presence conn :type "unsubscribed" :to to))
-
+  (xmpp-presence (conn :type "unsubscribed" :to to)))
 
 ;;
-;; Roster
+;; Blocking Communication
+;;
+
+;;
+;; Roster Management
 ;;
 
 (define-method xmpp-get-roster ((conn <xmpp-connection>))
@@ -443,19 +449,6 @@ mechanisms:  List of xml-element objects representing the various mechainsms
                  `((item
                     (|@| (jid ,jid) (subscription "remove"))))))
 
-;;
-;; Privacy list
-;;
-
-;;; Implemented in Jabberd2 and on which I have not tested with.
-(define-method xmpp-get-privacy-lists ((conn <xmpp-connection>))
-  (xmpp-iq-query (conn :id "getlist1" :xmlns "jabber:iq:privacy")))
-
-(define-method xmpp-get-privacy-list ((conn <xmpp-connection>) name)
-  (xmpp-iq-query (conn :id "getlist2" :xmlns "jabber:iq:privacy")
-                 `((list
-                    (|@| (name ,name))))))
-
 ;; --- SASL Authentication---
 
 (define-method xmpp-auth ((conn <xmpp-connection>) username password)
@@ -465,7 +458,7 @@ mechanisms:  List of xml-element objects representing the various mechainsms
     (if-car-sxpath '(// (urn:ietf:params:xml:ns:xmpp-sasl:mechanism ((equal? "PLAIN"))))))
   (define mechanism-has-anonymous?
     (if-car-sxpath '(// (urn:ietf:params:xml:ns:xmpp-sasl:mechanism ((equal? "ANONYMOUS"))))))
-  
+
   (let1 features (ref conn 'features)
     (cond ((mechanism-has-digest-md5? features)
            (xmpp-sasl-digest-md5 conn username password))
@@ -487,7 +480,7 @@ mechanisms:  List of xml-element objects representing the various mechainsms
   (with-output-to-connection conn
     (print "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='ANONYMOUS'/>"))
   (if-successful-restart-stream conn (xmpp-receive-stanza conn)))
-  
+
 (define-method xmpp-sasl-plain ((conn <xmpp-connection>) username password)
   (with-output-to-connection conn
     (format #t "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>~a</auth>"
@@ -496,14 +489,13 @@ mechanisms:  List of xml-element objects representing the various mechainsms
 
 (define-method xmpp-sasl-digest-md5 ((conn <xmpp-connection>) username password)
   ;; We immediately return when any auth steps have failed.
-  (define return #f)
-  (define (step1)
+  (define (step1 return)
     (let1 initial-challenge (xmpp-receive-stanza conn)
       (if (eq? (caadr initial-challenge) 'urn:ietf:params:xml:ns:xmpp-sasl:challenge)
         (let1 challenge-string (base64-decode-string (sxml:string-value initial-challenge))
           (make-digest-md5-response username password (ref conn 'hostname) challenge-string))
         (return initial-challenge))))
-  (define (step2 response rspauth-expected)
+  (define (step2 return response rspauth-expected)
     (let* ((second-challenge (xmpp-receive-stanza conn))
            (rspauth (assoc-ref (parse-challenge (base64-decode-string (sxml:string-value second-challenge))) "rspauth")))
       (or (and (eq? (caadr second-challenge) 'urn:ietf:params:xml:ns:xmpp-sasl:challenge)
@@ -513,20 +505,19 @@ mechanisms:  List of xml-element objects representing the various mechainsms
   (if-successful-restart-stream
    conn
    (call/cc
-    (lambda (cc)
-      (set! return cc)
+    (lambda (return)
       (with-output-to-connection conn
         (print "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='DIGEST-MD5'/>"))
-      (receive (response rspauth) (step1)
+      (receive (response rspauth) (step1 return)
         (with-output-to-connection conn
           (format #t "<response xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>~a</response>" (base64-encode-string response)))
-        (step2 response rspauth))
+        (step2 return response rspauth))
       (with-output-to-connection conn
         (print "<response xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"))
       (xmpp-receive-stanza conn)))))
 
 (define (parse-challenge str)
-  (filter-map (lambda (x) 
+  (filter-map (lambda (x)
                 (and-let* ((p (string-split x "="))
                            ((eq? 2 (length p)))
                            (key (car p))
@@ -566,9 +557,8 @@ mechanisms:  List of xml-element objects representing the various mechainsms
                 rspauth-expected)))))
 
 (define (make-cnonce)
-  (let ((mt (make <mersenne-twister> :seed (sys-time)))
-        (uv (make-u32vector 4)))
-    (mt-random-fill-u32vector! mt uv)
+  (let1 uv (make-u32vector 4)
+    (mt-random-fill-u32vector! *mt* uv)
     (base64-encode-string (u32vector->string uv))))
 
 (define (digest-md5 authc-id authz-id realm password digest-uri nonce cnonce nc qop request)
