@@ -369,7 +369,7 @@
 (define-method xmpp-push-roster ((conn <xmpp-connection>) items)
   (xmpp-iq (conn :type "set")
            `(query (|@| (xmlns "jabber:iq:roster"))
-                   ,items)))
+                   ,@items)))
 
 ;;
 ;; Blocking Communication
@@ -386,10 +386,10 @@
                             `(list (|@| (name ,name))))
                           names))))
 
-(define-method xmpp-set-privacy-lists ((conn <xmpp-connection>) children)
+(define-method xmpp-set-privacy-lists ((conn <xmpp-connection>) body)
   (xmpp-iq (conn :type "set")
            `(query (|@| (xmlns "jabber:iq:privacy"))
-                   ,children)))
+                   ,@body)))
 
 ;; --- SASL Authentication---
 

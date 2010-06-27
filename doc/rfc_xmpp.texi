@@ -41,15 +41,15 @@ It has the following slots:
 @c EN
 an XMPP stream id the server proposed when the client connects.
 @c JP
-接続時にサーバが提示したXMPPストリームのidです。文字列か@var{#f}。
-@c COMMON
+接続時にサーバが提示したXMPPストリームの@code{id}属性の値です。文字列か@var{#f}。
+@c COMMONp
 @end defivar
 
 @defivar <xmpp-connection> from
 @c EN
 an XMPP stream from the server proposed when the client connects.
 @c JP
-接続時にサーバが提示したXMPPストリームのfromです。文字列か@var{#f}。
+接続時にサーバが提示したXMPPストリームの@code{from}属性の値です。文字列か@var{#f}。
 @c COMMON
 @end defivar
 
@@ -57,7 +57,7 @@ an XMPP stream from the server proposed when the client connects.
 @c EN
 an XMPP stream to the server proposed when the client connects.
 @c JP
-接続時にサーバが提示したXMPPストリームのtoです。文字列か@var{#f}。
+接続時にサーバが提示したXMPPストリームの@code{to}属性の値です。文字列か@var{#f}。
 @c COMMON
 @end defivar
 
@@ -65,7 +65,7 @@ an XMPP stream to the server proposed when the client connects.
 @c EN
 an XMPP stream version the server proposed when the client connects.
 @c JP
-接続時にサーバが提示したXMPPストリームのバージョンです。文字列か@var{#f}。
+接続時にサーバが提示したXMPPストリームの@code{version}属性の値です。文字列か@var{#f}。
 @c COMMON
 @end defivar
 
@@ -73,7 +73,7 @@ an XMPP stream version the server proposed when the client connects.
 @c EN
 an XMPP stream xml:lang the server proposed when the client connects.
 @c JP
-接続時にサーバが提示したXMPPストリームのxml:langです。文字列か@var{#f}。
+接続時にサーバが提示したXMPPストリームの@code{xml:lang}属性の値です。文字列か@var{#f}。
 @c COMMON
 @end defivar
 
@@ -235,14 +235,14 @@ IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
 @deffn {Method} xmpp-bind ((conn <xmpp-connection>) resource)
 @c EN
 @c JP
-サーバにリソースバインドするIQを送ります。引数@var{resource}でリソースの名前を指定します。
+サーバに、リソースバインドするIQを送ります。引数@var{resource}でリソースの名前を指定します。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-session ((conn <xmpp-connection>))
 @c EN
 @c JP
-サーバにセッションセットするIQを送ります。
+サーバに、セッションセットするIQを送ります。
 @c COMMON
 @end deffn
 
@@ -277,30 +277,65 @@ IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
 @deffn {Method} xmpp-get-roster ((conn <xmpp-connection>))
 @c EN
 @c JP
-サーバに自分の友人名簿(ロスター)を取得するIQを送ります。
+サーバに、自分の友人名簿(ロスター)を取得するIQを送ります。
 @c COMMON
 @end deffn
 
-@deffn {Method} xmpp-add-roster ((conn <xmpp-connection>) jid name group)
+@deffn {Method} xmpp-push-roster ((conn <xmpp-connection>) items)
 @c EN
 @c JP
-サーバに自分の友人名簿に友人を追加するIQを送ります。引数は以下のとおりです。
-@table @var
-@item jid
-友人のJIDです。文字列。
-@item name
-友人につける名前です。文字列。
-@item group
-友人を加えるグループです。文字列。
-@end table
+サーバに、自分の友人名簿に友人を追加するIQを送ります。引数@var{items}で詳細を指定します。
+
+例えば、以下のコードは、自分の友人名簿に"juliet@@localhost"というJIDを、"Juliet"という名前で、"Capulet"というグループに追加します。
+@c COMMON
+@example
+(xmpp-push-roster conn
+                  `((item (|@@| (jid  "juliet@@localhost")
+                               (name "Juliet"))
+                          (group "Capulet"))))
+@end example
+@end deffn
+
+@deffn {Method} xmpp-get-privacy-lists-names ((conn <xmpp-connection>))
+@c EN
+@c JP
+サーバに、自分のプライバシーリストの名前を全て取得するIQを送ります。
 @c COMMON
 @end deffn
 
-@deffn {Method} xmpp-remove-roster ((conn <xmpp-connection>) jid)
+@deffn {Method} xmpp-get-privacy-lists ((conn <xmpp-connection>) names)
 @c EN
 @c JP
-サーバに自分の友人名簿から友人を削除するIQを送ります。引数@var{jid}は友人のJIDです。
+サーバに、自分のプライバシーリストから指定する名前のものを取得するIQを送ります。引数@var{names}に名前のリストを指定します。
 @c COMMON
+@end deffn
+
+@deffn {Method} xmpp-set-privacy-lists ((conn <xmpp-connection>) body)
+@c EN
+@c JP
+サーバに、自分のプライバシーリストを設定するIQを送ります。引数@var{body}で詳細を指定します。
+
+例えば、以下のコードは、自分のプライバシーリスト(名前は"mylist")に以下のようなルールを設定します。
+
+@enumerate
+@item "tybalt@@localhost"というJIDからは、IQとメッセージを受け取らず、自分のプレゼンスを伝えない。
+@item "Capulet"というグループのプレゼンスを受け取らない
+@item その他は全て受け取る。
+@end enumerate
+
+@c COMMON
+@example
+(xmpp-set-privacy-lists conn
+                        '(
+                          (item (|@@| (type "jid") (value "tybalt@@localhost") (action "deny") (order "1"))
+                            (iq)
+                            (message)
+                            (presence-out))
+                          (item (|@@| (type "group") (value "Capulet") (action "deny") (order "2"))
+                            (presence-in))
+                          (item (action "allow") (order "3"))
+                         ))
+@end example
 @end deffn
 
 @deffn {Method} xmpp-auth ((conn <xmpp-connection>) username password)
@@ -324,9 +359,8 @@ IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
 @deffn {Method} xmpp-auth-select-mechanism ((conn <xmpp-connection>) mechanism)
 @c EN
 @c JP
-サーバに認証方法を選択するIQを送ります。引数@var{mechanism}で認証方法を指定します。
+サーバに、認証方法を選択するIQを送ります。引数@var{mechanism}で認証方法を指定します。
 指定可能な認証方法については、@var{<xmpp-connection}クラスのスロット@var{features}の内容を調べてください。
-
 @c COMMON
 @end deffn
 
