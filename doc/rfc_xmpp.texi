@@ -1,0 +1,367 @@
+@c ----------------------------------------------------------------------
+@node XMPP, IP packets, HTTP, Library modules - Utilities
+@section @code{rfc.xmpp} - XMPP
+
+@deftp {Module} rfc.xmpp
+@mdindex rfc.xmpp
+@c EN
+This module provides a simple client API for XMPP, defined in RFC3920 and RFC3921, `` Extensible Messaging and Presence Protocol (XMPP)''
+@c JP
+このモジュールは、RFC3920とRFC3921の`` Extensible Messaging and Presence Protocol (XMPP)''で定義されているXMPPに対する簡単なクライアントAPIを提供します。
+@c COMMON
+(@ref{rfc3920, [RFC3920], RFC3920}).
+(@ref{rfc3921, [RFC3921], RFC3921}).
+@end deftp
+
+@deftp {Condition Type} <xmpp-error>
+@cindex xmpp-error
+@c EN
+This type of condition is raised when the server terminates
+connection prematurely or server's response has invalid
+header fields.  Inherits @code{<error>}.
+@c JP
+サーバから接続が切られた場合や、サーバの返したXMPPレスポンスのフォーマットが
+正しくない場合に投げられるコンディションです。@code{<error>}を継承します。
+@c COMMON
+@end deftp
+
+@deftp {Class} <xmpp-connection>
+@clindex xmpp-connection
+@c EN
+The instance of this class keeps internal state of an XMPP connection.
+
+It has the following slots:
+@c JP
+このクラスのインスタンスは、XMPP接続の内部状態を保持しています。
+
+以下のスロットを持ちます。
+@c COMMON
+
+@defivar <xmpp-connection> id
+@c EN
+an XMPP stream id the server proposed when the client connects.
+@c JP
+接続時にサーバが提示したXMPPストリームのidです。文字列か@var{#f}。
+@c COMMON
+@end defivar
+
+@defivar <xmpp-connection> from
+@c EN
+an XMPP stream from the server proposed when the client connects.
+@c JP
+接続時にサーバが提示したXMPPストリームのfromです。文字列か@var{#f}。
+@c COMMON
+@end defivar
+
+@defivar <xmpp-connection> to
+@c EN
+an XMPP stream to the server proposed when the client connects.
+@c JP
+接続時にサーバが提示したXMPPストリームのtoです。文字列か@var{#f}。
+@c COMMON
+@end defivar
+
+@defivar <xmpp-connection> version
+@c EN
+an XMPP stream version the server proposed when the client connects.
+@c JP
+接続時にサーバが提示したXMPPストリームのバージョンです。文字列か@var{#f}。
+@c COMMON
+@end defivar
+
+@defivar <xmpp-connection> xml:lang
+@c EN
+an XMPP stream xml:lang the server proposed when the client connects.
+@c JP
+接続時にサーバが提示したXMPPストリームのxml:langです。文字列か@var{#f}。
+@c COMMON
+@end defivar
+
+@defivar <xmpp-connection> features
+@c EN
+a contents of <features> the server proposed when the client connects.
+@c JP
+接続時にサーバが提示した@code{<features>}要素の内容です。SXML。
+@c COMMON
+@end defivar
+
+
+@end deftp
+
+@defun xmpp-connect host &keyword port jid-domain-part
+@c EN
+@c JP
+@var{host}に接続します。
+
+@var{port}キーワード引数で、ポート番号を指定できます。デフォルトの値は@code{5222}です。
+
+@var{jid-domain-part}キーワード引数で、JID(Jabber ID)のドメインを指定できます。例えば"gmail.com"と指定することで、
+Google Talkのような、サーバのアドレスは"talk.google.com"だがJIDのドメインは
+"gmail.com"であるという場合に対応できます。
+@c COMMON
+@end defun
+
+@defun call-with-xmpp-connection host proc &keyword port jid-domain-part
+@c EN
+@c JP
+高水準の便利関数で、サーバーに接続し、与えられた手続きを呼び、切断します。
+
+@var{host}への接続が成功したら、@var{proc}を引数を1つとって呼びだします。@var{proc}の引数は
+@var{<xmpp-connection>}のインスタンスです。
+@var{proc}が返ると接続を切断し、@var{proc}の返り値が
+@var{call-with-xmpp-connection}の返り値になります。
+
+例外がなげられたら、その例外が@var{call-with-xmpp-connection}から外へでる前に接続を切断します。
+
+キーワード引数は@var{xmpp-connect}と同じです。
+以下の例は、サーバ"localhost"にユーザ名"romeo"、パスワード"passwd"、リソース"Home"で接続し、
+受信したスタンザのSXML表現を解釈して、メッセージスタンザをエコーします。
+@c COMMON
+@example
+(use sxml.sxpath)
+(use rfc.xmpp)
+
+(define-constant hostname "localhost")
+(define-constant yourname "romeo")
+(define-constant yourpass "passwd")
+(define-constant yourrsrc "Home")
+(define-constant message@@from (if-car-sxpath '(jabber:client:message @@ from *text*)))
+(define-constant message-body (if-car-sxpath '(jabber:client:message jabber:client:body *text*)))
+
+(define (main args)
+  (call-with-xmpp-connection hostname
+    (lambda (c)
+      (xmpp-auth c yourname yourpass)
+      (xmpp-bind c yourrsrc)
+      (xmpp-session c)
+      (xmpp-presence (c))
+      (while #t
+        (let1 stanza (xmpp-receive-stanza c)
+          (and-let* ((from (message@@from stanza))
+                     (body (message-body stanza)))
+            (xmpp-message (c :to from)
+              `(body ,body)))))
+      0)))
+@end example
+@end defun
+
+@deffn {Method} xmpp-disconnect ((conn <xmpp-connection>))
+@c EN
+@c JP
+サーバとの接続を切断します。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-receive-stanza ((conn <xmpp-connection>))
+@c EN
+@c JP
+スタンザを受けとり、その内容をSXML表現で返します。受信するまで処理がブロックします。
+@c COMMON
+@end deffn
+
+@defmac xmpp-message (conn &keyword id from to type xml:lang) ...
+@c EN
+@c JP
+メッセージスタンザ(@code{<message>...</message>})を送ります。
+
+キーワード引数は以下の通りです。
+@table @var
+@item id
+@code{message}要素の@code{id}属性の値で、メッセージのidです。文字列。
+@item from
+@code{message}要素の@code{from}属性の値で、メッセージの差出人です。文字列。
+@item to
+@code{message}要素の@code{to}属性の値で、メッセージの宛先です。文字列。
+@item type
+@code{message}要素の@code{type}属性の値で、メッセージのタイプです。デフォルトの値は@code{"normal"}です。文字列。
+@item xml:lang
+@code{message}要素の@code{xml:lang}属性の値で、メッセージの言語です。文字列。
+@end table
+@c COMMON
+@end defmac
+
+@defmac xmpp-presence (conn &keyword id from to type xml:lang) ...
+@c EN
+@c JP
+プレゼンススタンザ(@code{<presence>...</presence>})を送ります。
+
+キーワード引数は以下のとおりです。
+@table @var
+@item id
+@code{presence}要素の@code{id}属性の値で、プレゼンスのidです。文字列。
+@item from
+@code{presence}要素の@code{from}属性の値で、プレゼンスの差出人です。文字列。
+@item to
+@code{presence}要素の@code{to}属性の値で、プレゼンスの宛先です。文字列。
+@item type
+@code{presence}要素の@code{type}属性の値で、プレゼンスのタイプです。文字列。
+@item xml:lang
+@code{presence}要素の@code{xml:lang}属性の値で、プレゼンスの言語です。文字列。
+@end table
+@c COMMON
+@end defmac
+
+@defmac xmpp-iq (conn &keyword id from to type xml:lang) ...
+@c EN
+@c JP
+IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
+
+キーワード引数は以下のとおりです。
+@table @var
+@item id
+@code{iq}要素の@code{id}属性の値で、IQのidです。文字列。
+@item from
+@code{iq}要素の@code{from}属性の値で、IQの差出人です。文字列。
+@item to
+@code{iq}要素の@code{to}属性の値で、IQの宛先です。文字列。
+@item type
+@code{iq}要素の@code{type}属性の値で、IQのタイプです。デフォルトの値は@code{"get"}です。文字列。
+@item xml:lang
+@code{iq}要素の@code{xml:lang}属性の値で、IQの言語です。文字列。
+@end table
+@c COMMON
+
+@c EN
+@c JP
+例えば、@var{xmpp-bind}は、実は以下のマクロでできています。
+@c COMMON
+@example
+(xmpp-iq (conn :type "set")
+         `(bind (|@@| (xmlns "urn:ietf:params:xml:ns:xmpp-bind"))
+                (resource ,resource)))
+@end example
+@end defmac
+
+@deffn {Method} xmpp-bind ((conn <xmpp-connection>) resource)
+@c EN
+@c JP
+サーバにリソースバインドするIQを送ります。引数@var{resource}でリソースの名前を指定します。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-session ((conn <xmpp-connection>))
+@c EN
+@c JP
+サーバにセッションセットするIQを送ります。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-subscribe ((conn <xmpp-connection>) to)
+@c EN
+@c JP
+相手に友人登録をリクエストするプレゼンスを送ります。引数@var{to}はプレゼンスの宛先です。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-subscribed ((conn <xmpp-connection>) to)
+@c EN
+@c JP
+相手を友人登録するプレゼンスを送ります。引数@var{to}はプレゼンスの宛先です。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-unsubscribe ((conn <xmpp-connection>) to)
+@c EN
+@c JP
+相手への友人登録を解除するプレゼンスを送ります。引数@var{to}はプレゼンスの宛先です。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-unsubscribed ((conn <xmpp-connection>) to)
+@c EN
+@c JP
+相手からの友人登録のリクエストを拒否するプレゼンスを送ります。引数@var{to}はプレゼンスの宛先です。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-get-roster ((conn <xmpp-connection>))
+@c EN
+@c JP
+サーバに自分の友人名簿(ロスター)を取得するIQを送ります。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-add-roster ((conn <xmpp-connection>) jid name group)
+@c EN
+@c JP
+サーバに自分の友人名簿に友人を追加するIQを送ります。引数は以下のとおりです。
+@table @var
+@item jid
+友人のJIDです。文字列。
+@item name
+友人につける名前です。文字列。
+@item group
+友人を加えるグループです。文字列。
+@end table
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-remove-roster ((conn <xmpp-connection>) jid)
+@c EN
+@c JP
+サーバに自分の友人名簿から友人を削除するIQを送ります。引数@var{jid}は友人のJIDです。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-auth ((conn <xmpp-connection>) username password)
+@c EN
+@c JP
+接続の認証を行います。認証方法は、サーバが提示するものの中から適当なものを自動的に選択します。
+まず@var{digest-md5}認証を最優先し、次に@var{plain}認証、最後に@var{anonymous}認証を選びます。
+
+認証方法を手動で選択したい場合は、後述の@var{xmpp-sasl-digest-md5}、@var{xmpp-sasl-plain}、@var{xmpp-sasl-anonymous}を使ってください。
+
+引数は以下のとおりです。
+@table @var
+@item username
+認証するユーザ名です。文字列。
+@item password
+認証するパスワードです。文字列。
+@end table
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-auth-select-mechanism ((conn <xmpp-connection>) mechanism)
+@c EN
+@c JP
+サーバに認証方法を選択するIQを送ります。引数@var{mechanism}で認証方法を指定します。
+指定可能な認証方法については、@var{<xmpp-connection}クラスのスロット@var{features}の内容を調べてください。
+
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-sasl-digest-md5 ((conn <xmpp-connection>) username password)
+@c EN
+@c JP
+接続のユーザ認証を行います。認証方法は、digest-md5です。引数は@var{xmpp-auth}と同じです。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-sasl-plain ((conn <xmpp-connection>) username password)
+@c EN
+@c JP
+接続のユーザ認証を行います。認証方法は、plainです。引数は@var{xmpp-auth}と同じです。
+@c COMMON
+@end deffn
+
+@deffn {Method} xmpp-sasl-anonymous ((conn <xmpp-connection>))
+@c EN
+@c JP
+接続のユーザ認証を行います。認証方法は、anonymousです。
+@c COMMON
+@end deffn
+
+@table @asis
+@anchor{rfc3920}
+@item [RFC3120]
+P. Saint-Andre, Ed.: Extensible Messaging and Presence Protocol (XMPP): Core @*
+October 2004.@*
+@url{http://www.ietf.org/rfc/rfc3920.txt}
+
+@anchor{rfc3921}
+@item [RFC3921]
+P. Saint-Andre, Ed.: Extensible Messaging and Presence Protocol (XMPP): Instant Messaging and Presence @*
+October 2004.@*
+@url{http://www.ietf.org/rfc/rfc3921.txt}
+@end table
+
