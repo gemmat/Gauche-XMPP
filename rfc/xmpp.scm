@@ -61,10 +61,10 @@
           xmpp-unsubscribed
           xmpp-iq
           xmpp-get-roster
-          xmpp-add-roster
-          xmpp-remove-roster
+          xmpp-push-roster
+          xmpp-get-privacy-lists-names
           xmpp-get-privacy-lists
-          xmpp-get-privacy-list
+          xmpp-set-privacy-lists
           xmpp-auth
           xmpp-auth-select-mechanism
           xmpp-sasl-anonymous
@@ -76,6 +76,15 @@
 (select-module rfc.xmpp)
 
 (define *default-port* 5222)
+(define *mt* (make <mersenne-twister> :seed (sys-time)))
+(define-constant *alnum* (list->vector (char-set->list (char-set-union char-set:lower-case char-set:digit))))
+
+(define (random-id)
+  (let1 len (vector-length *alnum*)
+    (list->string
+     (map (lambda (x)
+            (vector-ref *alnum* (mt-random-integer *mt* len)))
+          (iota 8)))))
 
 (define-condition-type <xmpp-error> <error> #f)
 
@@ -317,14 +326,13 @@
 (define-method xmpp-unsubscribed ((conn <xmpp-connection>) to)
   (xmpp-presence (conn :type "unsubscribed" :to to)))
 
-;;"Macro to make it easier to write IQ stanzas."
 (define-syntax xmpp-iq
   (syntax-rules ()
     ((_ (conn args ...))
      (xmpp-iq (conn args ...) #f))
     ((_ (conn args ...) extra ...)
      (let-keywords (list args ...) ((from     #f)
-                                    (id       (random-string *mt* 8))
+                                    (id       (random-id))
                                     (to       #f)
                                     (type     "get")
                                     (xml:lang #f))
@@ -344,41 +352,44 @@
 (define-method xmpp-bind ((conn <xmpp-connection>) resource)
   (xmpp-iq (conn :type "set")
            `(bind (|@| (xmlns "urn:ietf:params:xml:ns:xmpp-bind"))
-                  (resource ,resource))))
+               (resource ,resource))))
 
 (define-method xmpp-session ((conn <xmpp-connection>))
   (xmpp-iq (conn :type "set")
-           `(session
-             (|@| (xmlns "urn:ietf:params:xml:ns:xmpp-session")))))
-
-;;
-;; Blocking Communication
-;;
+           `(session (|@| (xmlns "urn:ietf:params:xml:ns:xmpp-session")))))
 
 ;;
 ;; Roster Management
 ;;
 
 (define-method xmpp-get-roster ((conn <xmpp-connection>))
-  (xmpp-iq (conn :xmlns "jabber:iq:roster")
-           '(query)))
+  (xmpp-iq (conn :type "get")
+           '(query (|@| (xmlns "jabber:iq:roster")))))
 
-;;; Note: Adding and removing from the roster is not the same as
-;;; adding and removing subscriptions.  I have not yet decided
-;;; if the library should provide convenience methods for doing
-;;; both actions at once.
-(define-method xmpp-add-roster ((conn <xmpp-connection>) jid name group)
-  (xmpp-iq (conn :type "set" :xmlns "jabber:iq:roster")
-           `(query
-             (item
-              (|@| (jid ,jid) (name ,name))
-              (group ,group)))))
+(define-method xmpp-push-roster ((conn <xmpp-connection>) items)
+  (xmpp-iq (conn :type "set")
+           `(query (|@| (xmlns "jabber:iq:roster"))
+                   ,items)))
 
-(define-method xmpp-remove-roster ((conn <xmpp-connection>) jid)
-  (xmpp-iq (conn :type "set" :xmlns "jabber:iq:roster")
-           `(query
-             (item
-              (|@| (jid ,jid) (subscription "remove"))))))
+;;
+;; Blocking Communication
+;;
+
+(define-method xmpp-get-privacy-lists-names ((conn <xmpp-connection>))
+  (xmpp-iq (conn :type "get")
+           `(query (|@| (xmlns "jabber:iq:privacy")))))
+
+(define-method xmpp-get-privacy-lists ((conn <xmpp-connection>) names)
+  (xmpp-iq (conn :type "get")
+           `(query (|@| (xmlns "jabber:iq:privacy"))
+                   ,@(map (lambda (name)
+                            `(list (|@| (name ,name))))
+                          names))))
+
+(define-method xmpp-set-privacy-lists ((conn <xmpp-connection>) children)
+  (xmpp-iq (conn :type "set")
+           `(query (|@| (xmlns "jabber:iq:privacy"))
+                   ,children)))
 
 ;; --- SASL Authentication---
 
@@ -497,9 +508,8 @@
                 rspauth-expected)))))
 
 (define (make-cnonce)
-  (let ((mt (make <mersenne-twister> :seed (sys-time)))
-        (uv (make-u32vector 4)))
-    (mt-random-fill-u32vector! mt uv)
+  (let1 uv (make-u32vector 4)
+    (mt-random-fill-u32vector! *mt* uv)
     (base64-encode-string (u32vector->string uv))))
 
 (define (digest-md5 authc-id authz-id realm password digest-uri nonce cnonce nc qop request)
