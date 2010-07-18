@@ -17,7 +17,7 @@ This module provides a simple client API for XMPP, defined in RFC3920 and RFC392
 @cindex xmpp-error
 @c EN
 This type of condition is raised when the server terminates
-connection prematurely or server's response has invalid
+a connection prematurely or server's response has invalid
 header fields.  Inherits @code{<error>}.
 @c JP
 サーバから接続が切られた場合や、サーバの返したXMPPレスポンスのフォーマットが
@@ -39,81 +39,120 @@ It has the following slots:
 
 @defivar <xmpp-connection> id
 @c EN
-an XMPP stream id the server proposed when the client connects.
+An @code{id} attribute the server proposed on the XMPP stream when the client connects.
+A string or @code{#f}.
 @c JP
-接続時にサーバが提示したXMPPストリームの@code{id}属性の値です。文字列か@var{#f}。
-@c COMMONp
+接続時にサーバが提示したXMPPストリームの@code{id}属性の値です。
+文字列か@code{#f}。
+@c COMMON
 @end defivar
 
 @defivar <xmpp-connection> from
 @c EN
-an XMPP stream from the server proposed when the client connects.
+A @code{from} attribute the server proposed on the XMPP stream when the client connects.
+A string or @code{#f}.
 @c JP
-接続時にサーバが提示したXMPPストリームの@code{from}属性の値です。文字列か@var{#f}。
+接続時にサーバが提示したXMPPストリームの@code{from}属性の値です。
+文字列か@code{#f}。
 @c COMMON
 @end defivar
 
 @defivar <xmpp-connection> to
 @c EN
-an XMPP stream to the server proposed when the client connects.
+A @code{to} attribute the server proposed on the XMPP stream when the client connects.
+A string or @code{#f}.
 @c JP
-接続時にサーバが提示したXMPPストリームの@code{to}属性の値です。文字列か@var{#f}。
+接続時にサーバが提示したXMPPストリームの@code{to}属性の値です。
+文字列か@code{#f}。
 @c COMMON
 @end defivar
 
 @defivar <xmpp-connection> version
 @c EN
-an XMPP stream version the server proposed when the client connects.
+A @code{version} attribute the server proposed on the XMPP stream when the client connects.
+A string or @code{#f}.
 @c JP
-接続時にサーバが提示したXMPPストリームの@code{version}属性の値です。文字列か@var{#f}。
+接続時にサーバが提示したXMPPストリームの@code{version}属性の値です。
+文字列か@code{#f}。
 @c COMMON
 @end defivar
 
 @defivar <xmpp-connection> xml:lang
 @c EN
-an XMPP stream xml:lang the server proposed when the client connects.
+A @code{xml:lang} attribute the server proposed on the XMPP stream when the client connects.
+A string or @code{#f}.
 @c JP
-接続時にサーバが提示したXMPPストリームの@code{xml:lang}属性の値です。文字列か@var{#f}。
+接続時にサーバが提示したXMPPストリームの@code{xml:lang}属性の値です。
+文字列か@code{#f}。
 @c COMMON
 @end defivar
 
 @defivar <xmpp-connection> features
 @c EN
-a contents of <features> the server proposed when the client connects.
+A <features> element the server proposed on the XMPP stream when the client connects.
+SXML.
 @c JP
-接続時にサーバが提示した@code{<features>}要素の内容です。SXML。
+接続時にサーバが提示したXMPPストリームの@code{<features>}要素の内容です。
+SXML。
 @c COMMON
 @end defivar
-
-
 @end deftp
 
-@defun xmpp-connect host &keyword port jid-domain-part
+@defun xmpp-connect server &keyword port jid-domain-part
 @c EN
+Connect to the @var{server}.
+
+The @var{server} argument specifies XMPP server name in a string.
+
+The @var{port} keyword argument specifies the port number. The default value is @code{5222}.
+
+The @var{jid-domain-part} keyword argument specifies the domain of JID(Jabber ID).
+
+For example, specify it "gmail.com" for the Google Talk, because the server address is "talk.google.com" but
+the domain of JID is "gmail.com".
 @c JP
-@var{host}に接続します。
+@var{server}に接続します。
 
-@var{port}キーワード引数で、ポート番号を指定できます。デフォルトの値は@code{5222}です。
+引数@var{server}では、文字列でXMPPサーバ名を指定します。
 
-@var{jid-domain-part}キーワード引数で、JID(Jabber ID)のドメインを指定できます。例えば"gmail.com"と指定することで、
-Google Talkのような、サーバのアドレスは"talk.google.com"だがJIDのドメインは
-"gmail.com"であるという場合に対応できます。
+キーワード引数@var{port}で、ポート番号を指定できます。デフォルトの値は@code{5222}です。
+
+キーワード引数@var{jid-domain-part}で、JID(Jabber ID)のドメインを指定できます。例えば"gmail.com"と指定することで、
+Google Talkのような、サーバのアドレスは"talk.google.com"だがJIDのドメインは"gmail.com"であるという場合に対応できます。
 @c COMMON
 @end defun
 
-@defun call-with-xmpp-connection host proc &keyword port jid-domain-part
+@defun call-with-xmpp-connection server proc &keyword port jid-domain-part
 @c EN
+A high-level convenience function to connect to the server, call the givin procedure, and disconnect.
+
+If XMPP connection to the @var{server} is successed, it calls @var{proc} with one argument.
+
+A argument of @var{proc} is a instance of @var{<xmpp-connection>}.
+
+It disconnects when @var{proc} returns, and the return value of @var{proc} is to be
+a return value of @var{call-with-xmpp-connection}.
+
+If it throws an exception, it disconnects before the exception escapes from @var{call-with-xmpp-connection}.
+
+Keyword arguments is same as @var{xmpp-connect}.
+
+The following example shows how to connect to the server ``localhost'',
+as a username is ``romeo'', its password is ``passwd'', and its resource is ``Home'',
+how to parse the SXML expression of a received stanza, and how to send a message stanza for echo.
 @c JP
 高水準の便利関数で、サーバーに接続し、与えられた手続きを呼び、切断します。
 
-@var{host}への接続が成功したら、@var{proc}を引数を1つとって呼びだします。@var{proc}の引数は
+@var{server}への接続が成功したら、@var{proc}を引数を1つとって呼びだします。@var{proc}の引数は
 @var{<xmpp-connection>}のインスタンスです。
+
 @var{proc}が返ると接続を切断し、@var{proc}の返り値が
 @var{call-with-xmpp-connection}の返り値になります。
 
 例外がなげられたら、その例外が@var{call-with-xmpp-connection}から外へでる前に接続を切断します。
 
 キーワード引数は@var{xmpp-connect}と同じです。
+
 以下の例は、サーバ"localhost"にユーザ名"romeo"、パスワード"passwd"、リソース"Home"で接続し、
 受信したスタンザのSXML表現を解釈して、メッセージスタンザをエコーします。
 @c COMMON
@@ -136,17 +175,18 @@ Google Talkのような、サーバのアドレスは"talk.google.com"だがJIDのドメインは
       (xmpp-session c)
       (xmpp-presence (c))
       (while #t
-        (let1 stanza (xmpp-receive-stanza c)
-          (and-let* ((from (message@@from stanza))
-                     (body (message-body stanza)))
-            (xmpp-message (c :to from)
-              `(body ,body)))))
+        (and-let* ((stanza (xmpp-receive-stanza c))
+                   (from (message@@from stanza))
+                   (body (message-body stanza)))
+          (xmpp-message (c :to from)
+            `(body ,body))))
       0)))
 @end example
 @end defun
 
 @deffn {Method} xmpp-disconnect ((conn <xmpp-connection>))
 @c EN
+Disconnect from the server.
 @c JP
 サーバとの接続を切断します。
 @c COMMON
@@ -154,20 +194,38 @@ Google Talkのような、サーバのアドレスは"talk.google.com"だがJIDのドメインは
 
 @deffn {Method} xmpp-receive-stanza ((conn <xmpp-connection>))
 @c EN
+Receive a stanza and returns the contents in the SXML expression.
+It blocks the processings until it receives.
 @c JP
-スタンザを受けとり、その内容をSXML表現で返します。受信するまで処理がブロックします。
+スタンザを受けとり、その内容をSXML表現で返します。
+受信するまで処理がブロックします。
 @c COMMON
 @end deffn
 
 @defmac xmpp-message (conn &keyword id from to type xml:lang) ...
 @c EN
+Send a message stanza (@code{<message>...</message>}).
+
+Keyword arguments is the following.
+@table @var
+@item id
+An @code{id} attribute of the @code{message} element, as an ID of the message. A string.
+@item from
+A @code{from} attribute of the @code{message} element, as a sender of the message. A string.
+@item to
+A @code{to} attribute of the @code{message} element, as a sendto of the message. A string.
+@item type
+A @code{type} attribute of the @code{message} element, as a type of the message. The default value is @code{"normal"}. A string.
+@item xml:lang
+An @code{xml:lang} attribute of the @code{message} element, as a language of the message. A string.
+@end table
 @c JP
 メッセージスタンザ(@code{<message>...</message>})を送ります。
 
 キーワード引数は以下の通りです。
 @table @var
 @item id
-@code{message}要素の@code{id}属性の値で、メッセージのidです。文字列。
+@code{message}要素の@code{id}属性の値で、メッセージのIDです。文字列。
 @item from
 @code{message}要素の@code{from}属性の値で、メッセージの差出人です。文字列。
 @item to
@@ -182,13 +240,27 @@ Google Talkのような、サーバのアドレスは"talk.google.com"だがJIDのドメインは
 
 @defmac xmpp-presence (conn &keyword id from to type xml:lang) ...
 @c EN
+Send a presence stanza (@code{<presence>...</presence>}).
+
+Keyword arguments is the following.
+@table @var
+An @code{id} attribute of the @code{presence} element, as an ID of the presence. A string.
+@item from
+A @code{from} attribute of the @code{presence} element, as a sender of the presence. A string.
+@item to
+A @code{to} attribute of the @code{presence} element, as a sendto of the presence. A string.
+@item type
+A @code{type} attribute of the @code{presence} element, as a type of the presence. The default value is @code{"normal"}. A string.
+@item xml:lang
+An @code{xml:lang} attribute of the @code{presence} element, as a language of the presence. A string.
+@end table
 @c JP
 プレゼンススタンザ(@code{<presence>...</presence>})を送ります。
 
 キーワード引数は以下のとおりです。
 @table @var
 @item id
-@code{presence}要素の@code{id}属性の値で、プレゼンスのidです。文字列。
+@code{presence}要素の@code{id}属性の値で、プレゼンスのIDです。文字列。
 @item from
 @code{presence}要素の@code{from}属性の値で、プレゼンスの差出人です。文字列。
 @item to
@@ -203,13 +275,27 @@ Google Talkのような、サーバのアドレスは"talk.google.com"だがJIDのドメインは
 
 @defmac xmpp-iq (conn &keyword id from to type xml:lang) ...
 @c EN
+Send a IQ(Info/Query) stanza (@code{<iq>...</iq>}).
+
+Keyword arguments is the following.
+@table @var
+An @code{id} attribute of the @code{iq} element, as an ID of the IQ. A string.
+@item from
+A @code{from} attribute of the @code{iq} element, as a sender of the IQ. A string.
+@item to
+A @code{to} attribute of the @code{iq} element, as a sendto of the IQ. A string.
+@item type
+A @code{type} attribute of the @code{iq} element, as a type of the IQ. The default value is @code{"normal"}. A string.
+@item xml:lang
+An @code{xml:lang} attribute of the @code{iq} element, as a language of the IQ. A string.
+@end table
 @c JP
-IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
+IQ(Info/Query)スタンザ(@code{<iq>...</iq>})を送ります。
 
 キーワード引数は以下のとおりです。
 @table @var
 @item id
-@code{iq}要素の@code{id}属性の値で、IQのidです。文字列。
+@code{iq}要素の@code{id}属性の値で、IQのIDです。文字列。
 @item from
 @code{iq}要素の@code{from}属性の値で、IQの差出人です。文字列。
 @item to
@@ -220,27 +306,31 @@ IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
 @code{iq}要素の@code{xml:lang}属性の値で、IQの言語です。文字列。
 @end table
 @c COMMON
-
 @c EN
+For example, in fact, @var{xmpp-bind} consists of the following macro.
 @c JP
 例えば、@var{xmpp-bind}は、実は以下のマクロでできています。
 @c COMMON
 @example
 (xmpp-iq (conn :type "set")
-         `(bind (|@@| (xmlns "urn:ietf:params:xml:ns:xmpp-bind"))
-                (resource ,resource)))
+  `(bind (|@@| (xmlns "urn:ietf:params:xml:ns:xmpp-bind"))
+              (resource ,resource)))
 @end example
 @end defmac
 
 @deffn {Method} xmpp-bind ((conn <xmpp-connection>) resource)
 @c EN
+Send a IQ for the resource binding to the server.
+Specify the argument @var{resource} for the name of the resource.
 @c JP
-サーバに、リソースバインドするIQを送ります。引数@var{resource}でリソースの名前を指定します。
+サーバに、リソースバインドするIQを送ります。
+引数@var{resource}でリソースの名前を指定します。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-session ((conn <xmpp-connection>))
 @c EN
+Send a IQ for the session setting to the server.
 @c JP
 サーバに、セッションセットするIQを送ります。
 @c COMMON
@@ -248,34 +338,47 @@ IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
 
 @deffn {Method} xmpp-subscribe ((conn <xmpp-connection>) to)
 @c EN
+Send a presence for a subscribe-request to a friend.
+Specify the argument @var{to} for the sendto of the presence.
 @c JP
-相手に友人登録をリクエストするプレゼンスを送ります。引数@var{to}はプレゼンスの宛先です。
+相手に友人登録をリクエストするプレゼンスを送ります。
+引数@var{to}はプレゼンスの宛先です。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-subscribed ((conn <xmpp-connection>) to)
 @c EN
+Send a presence for a subscribe-approve to a friend.
+Specify the argument @var{to} for the sendto of the presence.
 @c JP
-相手を友人登録するプレゼンスを送ります。引数@var{to}はプレゼンスの宛先です。
+相手を友人登録するプレゼンスを送ります。
+引数@var{to}はプレゼンスの宛先です。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-unsubscribe ((conn <xmpp-connection>) to)
 @c EN
+Send a presence for a subscribe-cancel to a friend.
+Specify the argument @var{to} for the sendto of the presence.
 @c JP
-相手への友人登録を解除するプレゼンスを送ります。引数@var{to}はプレゼンスの宛先です。
+相手への友人登録を解除するプレゼンスを送ります。
+引数@var{to}はプレゼンスの宛先です。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-unsubscribed ((conn <xmpp-connection>) to)
 @c EN
+Send a presence for a subscribe-disapprove to a friend.
+Specify the argument @var{to} for the sendto of the presence.
 @c JP
-相手からの友人登録のリクエストを拒否するプレゼンスを送ります。引数@var{to}はプレゼンスの宛先です。
+相手からの友人登録のリクエストを拒否するプレゼンスを送ります。
+引数@var{to}はプレゼンスの宛先です。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-get-roster ((conn <xmpp-connection>))
 @c EN
+Send a IQ to the server to get the roster.
 @c JP
 サーバに、自分の友人名簿(ロスター)を取得するIQを送ります。
 @c COMMON
@@ -283,21 +386,28 @@ IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
 
 @deffn {Method} xmpp-push-roster ((conn <xmpp-connection>) items)
 @c EN
+Send a IQ to the server to add the friends to the roster.
+Specify the argument @var{items} for the details.
+
+For example, the following code shows how to add a JID to the roster.
+The JID is ``juliet@@localhost'', named ``Juliet'', and the group is ``Capulet''.
 @c JP
-サーバに、自分の友人名簿に友人を追加するIQを送ります。引数@var{items}で詳細を指定します。
+サーバに、自分の友人名簿に友人を追加するIQを送ります。
+引数@var{items}で詳細を指定します。
 
 例えば、以下のコードは、自分の友人名簿に"juliet@@localhost"というJIDを、"Juliet"という名前で、"Capulet"というグループに追加します。
 @c COMMON
 @example
 (xmpp-push-roster conn
-                  `((item (|@@| (jid  "juliet@@localhost")
-                               (name "Juliet"))
-                          (group "Capulet"))))
+  `((item (|@@| (jid  "juliet@@localhost")
+               (name "Juliet"))
+               (group "Capulet"))))
 @end example
 @end deffn
 
 @deffn {Method} xmpp-get-privacy-lists-names ((conn <xmpp-connection>))
 @c EN
+Send a IQ to the server to get the names of the privacy lists.
 @c JP
 サーバに、自分のプライバシーリストの名前を全て取得するIQを送ります。
 @c COMMON
@@ -305,44 +415,68 @@ IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
 
 @deffn {Method} xmpp-get-privacy-lists ((conn <xmpp-connection>) names)
 @c EN
+Send a IQ to the server to get the privacy lists of the specified names.
+Specify the argument @var{names} for a list of names.
 @c JP
-サーバに、自分のプライバシーリストから指定する名前のものを取得するIQを送ります。引数@var{names}に名前のリストを指定します。
+サーバに、自分のプライバシーリストから指定する名前のものを取得するIQを送ります。
+引数@var{names}に名前のリストを指定します。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-set-privacy-lists ((conn <xmpp-connection>) body)
 @c EN
+Send a IQ to server to set the privacy lists.
+Specify the argument @var{body} for the details.
+
+For example, the following code set the following rules for the privacy list named ``mylist''.
+@enumerate
+@item About ``tybalt@@localhost'', don't receive any IQs and messages and don't send any presences.
+@item About ``Capulet'' group, don't receive any presences.
+@item Receive others.
+@end enumerate
 @c JP
-サーバに、自分のプライバシーリストを設定するIQを送ります。引数@var{body}で詳細を指定します。
-
+サーバに、自分のプライバシーリストを設定するIQを送ります。
+引数@var{body}で詳細を指定します。
 例えば、以下のコードは、自分のプライバシーリスト(名前は"mylist")に以下のようなルールを設定します。
-
 @enumerate
 @item "tybalt@@localhost"というJIDからは、IQとメッセージを受け取らず、自分のプレゼンスを伝えない。
 @item "Capulet"というグループのプレゼンスを受け取らない
 @item その他は全て受け取る。
 @end enumerate
-
 @c COMMON
 @example
 (xmpp-set-privacy-lists conn
-                        '(
-                          (item (|@@| (type "jid") (value "tybalt@@localhost") (action "deny") (order "1"))
-                            (iq)
-                            (message)
-                            (presence-out))
-                          (item (|@@| (type "group") (value "Capulet") (action "deny") (order "2"))
-                            (presence-in))
-                          (item (action "allow") (order "3"))
-                         ))
+  '(
+    (item (|@@| (type "jid") (value "tybalt@@localhost") (action "deny") (order "1"))
+      (iq)
+      (message)
+      (presence-out))
+    (item (|@@| (type "group") (value "Capulet") (action "deny") (order "2"))
+      (presence-in))
+    (item (action "allow") (order "3"))
+   ))
 @end example
 @end deffn
 
 @deffn {Method} xmpp-auth ((conn <xmpp-connection>) username password)
 @c EN
+Authenticate the connection. The mechanism of the authentication is automatically selected from mechanisms the server proposed.
+
+The top priority is the DIGEST-MD5 auth, the second is the PLAIN auth, the last is the ANONYMOUS auth.
+
+In the case to manually select the authentication mechanism, use below @var{xmpp-sasl-digest-md5}, @var{xmpp-sasl-plain}, and @var{xmpp-sasl-anonymous}.
+
+Arguments is the following.
+@table @var
+@item username
+A username to auth. A string.
+@item password
+A password to auth. A string.
+@end table
 @c JP
 接続の認証を行います。認証方法は、サーバが提示するものの中から適当なものを自動的に選択します。
-まず@var{digest-md5}認証を最優先し、次に@var{plain}認証、最後に@var{anonymous}認証を選びます。
+
+まずDIGEST-MD5認証を最優先し、次にPLAIN認証、最後にANONYMOUS認証を選びます。
 
 認証方法を手動で選択したい場合は、後述の@var{xmpp-sasl-digest-md5}、@var{xmpp-sasl-plain}、@var{xmpp-sasl-anonymous}を使ってください。
 
@@ -358,30 +492,44 @@ IQ(Info/Query)スタンザ@code{(<iq>...</iq>)}を送ります。
 
 @deffn {Method} xmpp-auth-select-mechanism ((conn <xmpp-connection>) mechanism)
 @c EN
+Send a IQ to select the authentication mechanism.
+Specify the argument @var{mechanism} for the authentication mechanism.
+
+To see selections of the authentication mechanism, inspect the slot @var{features} of the class @var{<xmpp-connection>}.
 @c JP
-サーバに、認証方法を選択するIQを送ります。引数@var{mechanism}で認証方法を指定します。
-指定可能な認証方法については、@var{<xmpp-connection}クラスのスロット@var{features}の内容を調べてください。
+サーバに、認証方法を選択するIQを送ります。
+引数@var{mechanism}で認証方法を指定します。
+
+指定可能な認証方法については、@var{<xmpp-connection>}クラスのスロット@var{features}の内容を調べてください。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-sasl-digest-md5 ((conn <xmpp-connection>) username password)
 @c EN
+Authenticate the connection. The authenticate mechanism is the DIGEST-MD5.
+Arguments is the same with the @var{xmpp-auth}.
 @c JP
-接続のユーザ認証を行います。認証方法は、digest-md5です。引数は@var{xmpp-auth}と同じです。
+接続の認証を行います。認証方法は、DIGEST-MD5です。
+引数は@var{xmpp-auth}と同じです。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-sasl-plain ((conn <xmpp-connection>) username password)
 @c EN
+Authenticate the connection. The authenticate mechanism is the PLAIN.
+Arguments is the same with the @var{xmpp-auth}.
 @c JP
-接続のユーザ認証を行います。認証方法は、plainです。引数は@var{xmpp-auth}と同じです。
+接続の認証を行います。認証方法は、PLAINです。
+引数は@var{xmpp-auth}と同じです。
 @c COMMON
 @end deffn
 
 @deffn {Method} xmpp-sasl-anonymous ((conn <xmpp-connection>))
 @c EN
+Authenticate the connection. The authenticate mechanism is the ANONYMOUS.
+Arguments is the same with the @var{xmpp-auth}.
 @c JP
-接続のユーザ認証を行います。認証方法は、anonymousです。
+接続の認証を行います。認証方法は、ANONYMOUSです。
 @c COMMON
 @end deffn
 
