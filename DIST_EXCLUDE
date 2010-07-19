@@ -2,9 +2,5 @@ AUTOCONF
 DIST
 DIST_EXCLUDE
 DIST_EXCLUDE_X
-TEST
-autom4te.cache
-digest-md5-crash.html
-.svn
 .git
 .gitignore

@@ -5,7 +5,7 @@ dnl $Id: template.configure.ac,v 1.4 2008-04-18 12:36:26 shirok Exp $
 dnl
 
 AC_PREREQ(2.54)
-AC_INIT(Gauche-xmpp, 1.0, teruakigemma@gmail.com)
+AC_INIT(Gauche-XMPP, 1.1, teruakigemma@gmail.com)
 dnl If you want to use the system name (OS, architecture, etc) in the
 dnl configure, uncomment the following line.  In such a case, you need
 dnl to copy config.guess and config.sub from automake distribution.

@@ -3,8 +3,8 @@
 ;;;
 ;;; rfc.xmpp
 ;;;
-;;; Copyright (c) 2005 Erik Enge(erik.enge@gmail.com)
-;;;               2009 Teruaki Gemma(teruakigemma@gmail.com)
+;;; Copyright (c) 2010 Teruaki Gemma(teruakigemma@gmail.com)
+;;;
 ;;;
 ;;; Permission is hereby granted, free of charge, to any person obtaining
 ;;; a copy of this software and associated documentation files (the
@@ -28,10 +28,6 @@
 ;;;  $Id$
 ;;;
 
-;;; This library includes some codes from cl-xmpp version 0.8.1
-;;; (http://common-lisp.net/project/cl-xmpp/) released under the MIT-style license.
-;;; Thanks cl-xmpp developers.
-
 (define-module rfc.xmpp
   (use srfi-1)
   (use srfi-13)
@@ -46,7 +42,8 @@
   (use rfc.md5)
   (use rfc.base64)
   (use math.mt-random)
-  (export <xmpp-connection>
+  (export <xmpp-error>
+          <xmpp-connection>
           xmpp-connect
           xmpp-disconnect
           call-with-xmpp-connection

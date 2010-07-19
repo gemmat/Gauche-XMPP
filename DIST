@@ -5,7 +5,7 @@
 #  ./DIST tgz  : creates a tarball.
 # Assumes gnu tar.
 
-MODULE=Gauche-xmpp
+MODULE=Gauche-XMPP
 
 while [ $# -gt 0 ]; do
   case $1 in

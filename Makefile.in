@@ -24,7 +24,7 @@ INSTALL        = @GAUCHE_INSTALL@
 LOCAL_PATHS = @LOCAL_PATHS@
 
 # Module-specific stuff
-PACKAGE   = Gauche-xmpp
+PACKAGE   = Gauche-XMPP
 
 SCMFILES  = $(srcdir)/rfc/xmpp.scm
 
