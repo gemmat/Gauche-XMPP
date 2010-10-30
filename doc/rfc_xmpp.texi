@@ -110,6 +110,8 @@ The @var{jid-domain-part} keyword argument specifies the domain of JID(Jabber ID
 
 For example, specify it "gmail.com" for the Google Talk, because the server address is "talk.google.com" but
 the domain of JID is "gmail.com".
+
+The @var{xml:lang} keyword argument specifies the language. The default value is @code{#f}.
 @c JP
 @var{server}に接続します。
 
@@ -119,6 +121,8 @@ the domain of JID is "gmail.com".
 
 キーワード引数@var{jid-domain-part}で、JID(Jabber ID)のドメインを指定できます。例えば"gmail.com"と指定することで、
 Google Talkのような、サーバのアドレスは"talk.google.com"だがJIDのドメインは"gmail.com"であるという場合に対応できます。
+
+キーワード引数@var{xml:lang}で、言語を指定できます。デフォルトの値は@code{#f}です。
 @c COMMON
 @end defun
 

@@ -93,7 +93,7 @@
    (from)
    (to)
    (version)
-   (xml:lang)
+   (xml:lang        :init-keyword :xml:lang)
    (features)
    (stream-default-namespace)
    (jid-domain-part :init-keyword :jid-domain-part)
@@ -133,8 +133,9 @@
     (,(if-sxpath '(http://etherx.jabber.org/streams:features)) . ,handle-features)))
 
 (define (xmpp-connect hostname . args)
-  (let-keywords args ((port             *default-port*)
-                      (jid-domain-part   #f))
+  (let-keywords args ((port            *default-port*)
+                      (jid-domain-part #f)
+                      (xml:lang        #f))
     (let* ((socket (make-client-socket 'inet hostname port))
            (conn (make <xmpp-connection>
                    :socket          socket
@@ -142,7 +143,8 @@
                    :socket-oport   (socket-output-port socket)
                    :hostname        hostname
                    :port            port
-                   :jid-domain-part jid-domain-part)))
+                   :jid-domain-part jid-domain-part
+                   :xml:lang        xml:lang)))
       (begin-xml-stream conn)
       (xmpp-receive-stanza conn) ; stream
       (xmpp-receive-stanza conn) ; features
@@ -162,35 +164,31 @@
 (define-method xmpp-receive-stanza ((conn <xmpp-connection>))
   (define (FINISH-ELEMENT elem-gi attributes namespaces parent-seed seed)
     (define (RES-NAME->SXML res-name)
-      (string->symbol
-       (string-append
-        (symbol->string (car res-name))
-        ":"
-        (symbol->string (cdr res-name)))))
+      (string->symbol (string-append (symbol->string (car res-name)) ":" (symbol->string (cdr res-name)))))
     (let ((seed (ssax:reverse-collect-str-drop-ws seed))
           (attrs (attlist-fold (lambda (attr accum)
-                                 (cons (list
-                                        (if (symbol? (car attr)) (car attr)
-                                            (RES-NAME->SXML (car attr)))
-                                        (cdr attr)) accum))
+                                 (cons (list (if (symbol? (car attr))
+                                                 (car attr)
+                                                 (RES-NAME->SXML (car attr)))
+                                             (cdr attr))
+                                       accum))
                                '()
                                attributes)))
-      (cons
-       (cons
-        (if (symbol? elem-gi) elem-gi
-            (RES-NAME->SXML elem-gi))
-        (if (null? attrs) seed
-            (cons (cons '@ attrs) seed)))
-       parent-seed)))
-  (define elem-parser (ssax:make-elem-parser
-                       (lambda (elem-gi attributes namespaces expected-content seed)
-                         '())
-                       FINISH-ELEMENT
-                       (lambda (string1 string2 seed)
-                         (if (string=? "" string2)
-                           (cons string1 seed)
-                           (cons* string2 string1 seed)))
-                       ()))
+      (cons (cons (if (symbol? elem-gi)
+                      elem-gi
+                      (RES-NAME->SXML elem-gi))
+                  (if (null? attrs)
+                      seed
+                      (cons (cons '@ attrs) seed)))
+            parent-seed)))
+  (define elem-parser (ssax:make-elem-parser (lambda (elem-gi attributes namespaces expected-content seed)
+                                               '())
+                                             FINISH-ELEMENT
+                                             (lambda (string1 string2 seed)
+                                               (if (string=? "" string2)
+                                                   (cons string1 seed)
+                                                   (cons* string2 string1 seed)))
+                                             ()))
   (define (read-stanza inp)
     (call/cc
      (lambda (return)
@@ -215,8 +213,8 @@
                ;;`(*PI* ,(xml-token-head token) ,(ssax:read-pi-body-as-string inp)))
                (ssax:skip-pi inp))
               ((eq? 'START (xml-token-kind token))
-               (return (cons '*TOP* (elem-parser (xml-token-head token) inp #f '()
-                                                 (ref conn 'stream-default-namespace) #f '()))))
+               (return (cons '*TOP*
+                             (elem-parser (xml-token-head token) inp #f '() (ref conn 'stream-default-namespace) #f '()))))
               (else
                ;;something wrong
                (error <xmpp-error> "Oops. Something wrong at XMPP parsing:" (read-char inp))))))))))
@@ -259,9 +257,11 @@
     (with-output-to-connection conn
       (when xml-identifier
        (print "<?xml version='1.0' ?>"))
-      (format #t "<stream:stream to='~a' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>"
-              (or (ref conn 'jid-domain-part) (ref conn 'hostname))))))
-
+      (format #t "<stream:stream to='~a' ~a xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>"
+              (or (ref conn 'jid-domain-part) (ref conn 'hostname))
+              (if (ref conn 'xml:lang)
+                  (format #f "xml:lang='~a'" (ref conn 'xml:lang))
+                  "")))))
 
 ;;"Closes the XML stream.  At this point you'd have to
 ;; call BEGIN-XML-STREAM if you wished to communicate with
@@ -466,21 +466,19 @@
 
 (define (parse-challenge str)
   (filter-map (lambda (x)
-                (and-let* ((p (string-split x "="))
-                           ((eq? 2 (length p)))
-                           (key (car p))
-                           (value (cadr p)))
-                  ;; strip double-quotes.
-                  (rxmatch-if (#/^\"(.*)\"$/ value)
-                      (#f s)
-                      (cons key s)
-                      (cons key value))))
+                (rxmatch-if (#/^([^=]+)=(.*)/ x)
+                    (#f key value)
+                    ;; strip double-quotes.
+                    (rxmatch-if (#/^\"(.*)\"$/ value)
+                        (#f s)
+                        (cons key s)
+                        (cons key value))
+                    #f))
               (string-split str ",")))
 
 (define (make-digest-md5-response username password hostname challenge)
   (define (dblq str)
     (string-append "\"" str "\""))
-
   (let1 l (parse-challenge challenge)
     (let ((nonce      (assoc-ref l "nonce"))
           (qop        (assoc-ref l "qop"))
