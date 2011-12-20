@@ -121,7 +121,7 @@
           ((if-car-sxpath '(http://etherx.jabber.org/streams:stream @ to *text*)) sxml))
     (set! (ref conn 'version)
           ((if-car-sxpath '(http://etherx.jabber.org/streams:stream @ version *text*)) sxml))
-    (set! (ref conn 'xml:lang) 
+    (set! (ref conn 'xml:lang)
           ((if-car-sxpath '(http://etherx.jabber.org/streams:stream @ xml:lang *text*)) sxml))
     (and-let* ((version (ref conn 'version)))
       (when (< (string->number version) 1.0)
